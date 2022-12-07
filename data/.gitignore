@@ -1,5 +1,5 @@
-*
-!.gitignore
-!20221205_repoweron.pcap
-!20221205_repoweron/*
+.gitignore
+20221205/
+20221205.pcap
+demo.pcap
 
