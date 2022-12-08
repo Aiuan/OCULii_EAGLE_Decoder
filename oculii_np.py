@@ -59,7 +59,7 @@ class HandshakePacket(object):
         self.timestamp_packet_receive, self.idx_packet, self.src, self.sport, self.dst, self.dport
       )
     )
-    self.timestamp_trigger = self.timestamp_seconds - 37 + self.timestamp_nanoseconds / 1e10
+    self.timestamp_trigger = self.timestamp_seconds - 37 + self.timestamp_nanoseconds / 1e9
 
     # local time
     timestamp_packet_receive_local_time_str = time.strftime(
@@ -378,7 +378,7 @@ class OCULiiDecoderNetworkPackets(object):
       body_pkg = BodyPacket(self.packets_in_frame[1:])
 
       # name the file according to the pts' unix_timestamp at 0 degree
-      pcd_filename = '{:.6f}.{}'.format(handshake_pkg.timestamp_trigger, self.pcd_file_type)
+      pcd_filename = '{:.9f}.{}'.format(handshake_pkg.timestamp_trigger, self.pcd_file_type)
       pcd_path = os.path.join(self.output_path, pcd_filename)
 
       # x y z doppler snr
