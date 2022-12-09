@@ -300,6 +300,9 @@ class OCULiiDecoderNetworkPackets(object):
       self.after_ptp_trigger = False
       self.init_for_next_frame()
 
+      self.frame_infos = []
+      self.last_generated_frame_timestamp = None
+
     def __del__(self):
       self.f.close()
 
@@ -371,56 +374,81 @@ class OCULiiDecoderNetworkPackets(object):
         except Exception as e:
           log_YELLOW(repr(e))
           print('Read all packets done')
+
+          # save logs
+          self.frame_infos = pd.DataFrame(self.frame_infos)
+          self.frame_infos.to_csv(os.path.join(self.output_path, 'logs.csv'))
+
+          print('include_number_of_frames = {}'.format(self.frame_infos.shape[0]))
+          print('generate_number_of_frames = {}'.format(len(os.listdir(self.output_path)) - 1))
+
           exit()
 
     def generate_frame(self):
       handshake_pkg = self.packets_in_frame[0]
+      if self.last_generated_frame_timestamp is not None:
+        delta = handshake_pkg.timestamp_trigger - self.last_generated_frame_timestamp
+        if np.abs(delta - 1 / 12) * 1000 > 1:
+          log_RED('    freq error: delta = {:.2f} ms'.format(delta * 1000))
+        else:
+          log_GREEN('    freq normal: delta = {:.2f} ms'.format(delta * 1000))
+
       body_pkg = BodyPacket(self.packets_in_frame[1:])
 
       # name the file according to the pts' unix_timestamp at 0 degree
       pcd_filename = '{:.9f}.{}'.format(handshake_pkg.timestamp_trigger, self.pcd_file_type)
       pcd_path = os.path.join(self.output_path, pcd_filename)
 
-      # x y z doppler snr
-      if self.pcd_file_type == 'npz':
-        np.savez(
-          pcd_path,
-          x=body_pkg.pts['x'].values.astype('float32'),
-          y=body_pkg.pts['y'].values.astype('float32'),
-          z=body_pkg.pts['z'].values.astype('float32'),
-          doppler=body_pkg.pts['doppler'].values.astype('float32'),
-          snr=body_pkg.pts['snr'].values.astype('float32')
-        )
-      elif self.pcd_file_type == 'pcd':
-        pcd = pd.DataFrame({
-          'x': body_pkg.pts['x'].values.astype('float32'),
-          'y': body_pkg.pts['y'].values.astype('float32'),
-          'z': body_pkg.pts['z'].values.astype('float32'),
-          'doppler': body_pkg.pts['doppler'].values.astype('float32'),
-          'snr': body_pkg.pts['snr'].values.astype('float32'),
-        })
+      # record
+      self.frame_infos.append({
+        'timestamp': handshake_pkg.timestamp_trigger,
+        'frame_number': body_pkg.header_block.frame_number
+      })
 
-        pcd.to_csv(pcd_path, sep=' ', index=False, header=False)
-        with open(pcd_path, 'r') as f_pcd:
-          lines = f_pcd.readlines()
+      if not os.path.exists(pcd_path):
+        # x y z doppler snr
+        if self.pcd_file_type == 'npz':
+          np.savez(
+            pcd_path,
+            x=body_pkg.pts['x'].values.astype('float32'),
+            y=body_pkg.pts['y'].values.astype('float32'),
+            z=body_pkg.pts['z'].values.astype('float32'),
+            doppler=body_pkg.pts['doppler'].values.astype('float32'),
+            snr=body_pkg.pts['snr'].values.astype('float32')
+          )
+        elif self.pcd_file_type == 'pcd':
+          pcd = pd.DataFrame({
+            'x': body_pkg.pts['x'].values.astype('float32'),
+            'y': body_pkg.pts['y'].values.astype('float32'),
+            'z': body_pkg.pts['z'].values.astype('float32'),
+            'doppler': body_pkg.pts['doppler'].values.astype('float32'),
+            'snr': body_pkg.pts['snr'].values.astype('float32'),
+          })
 
-        with open(pcd_path, 'w') as f_pcd:
-          f_pcd.write('VERSION .7\n')
-          f_pcd.write('FIELDS')
-          for col in pcd.columns.values:
-            f_pcd.write(' {}'.format(col))
-          f_pcd.write('\n')
-          f_pcd.write('SIZE 4 4 4 4 4\n')
-          f_pcd.write('TYPE F F F F F\n')
-          f_pcd.write('COUNT 1 1 1 1 1\n')
-          f_pcd.write('WIDTH {}\n'.format(len(pcd)))
-          f_pcd.write('HEIGHT 1\n')
-          f_pcd.write('VIEWPOINT 0 0 0 1 0 0 0\n')
-          f_pcd.write('POINTS {}\n'.format(len(pcd)))
-          f_pcd.write('DATA ascii\n')
-          f_pcd.writelines(lines)
+          pcd.to_csv(pcd_path, sep=' ', index=False, header=False)
+          with open(pcd_path, 'r') as f_pcd:
+            lines = f_pcd.readlines()
 
-      log_GREEN('    Generate {},save to {}'.format(pcd_filename, pcd_path))
+          with open(pcd_path, 'w') as f_pcd:
+            f_pcd.write('VERSION .7\n')
+            f_pcd.write('FIELDS')
+            for col in pcd.columns.values:
+              f_pcd.write(' {}'.format(col))
+            f_pcd.write('\n')
+            f_pcd.write('SIZE 4 4 4 4 4\n')
+            f_pcd.write('TYPE F F F F F\n')
+            f_pcd.write('COUNT 1 1 1 1 1\n')
+            f_pcd.write('WIDTH {}\n'.format(len(pcd)))
+            f_pcd.write('HEIGHT 1\n')
+            f_pcd.write('VIEWPOINT 0 0 0 1 0 0 0\n')
+            f_pcd.write('POINTS {}\n'.format(len(pcd)))
+            f_pcd.write('DATA ascii\n')
+            f_pcd.writelines(lines)
 
+        log_GREEN('    ({})Generate {},save to {}'.format(len(self.frame_infos), pcd_filename, pcd_path))
+      else:
+        log_RED('    ({})Generate {},save to {}'.format(len(self.frame_infos), pcd_filename, pcd_path))
+
+      self.last_generated_frame_timestamp = handshake_pkg.timestamp_trigger
 
 

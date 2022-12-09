@@ -4,7 +4,7 @@ from oculii_np import OCULiiDecoderNetworkPackets
 from oculii_db import OCULiiDecoderDataBin
 
 def decode_network_packets():
-    data_path = './data/20221205_repoweron.pcap'
+    data_path = './data/20221209.pcap'
     output_path = './runs/test'
 
     odnp = OCULiiDecoderNetworkPackets(pcap_path=data_path, output_path=output_path, pcd_file_type='pcd')
